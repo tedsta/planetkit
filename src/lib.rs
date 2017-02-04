@@ -28,7 +28,6 @@ extern crate specs;
 extern crate num_traits;
 extern crate wavefront_obj as obj;
 
-pub mod game;
 pub mod globe;
 pub mod types;
 pub mod app;
