@@ -1,4 +1,5 @@
 use na;
+use cam;
 
 // Common types for all of PlanetKit.
 //
@@ -17,3 +18,5 @@ pub type Iso3 = na::Isometry3<f64>;
 pub type TimeDelta = f64;
 
 pub type Mat4 = na::Matrix4<f64>;
+
+pub type Camera = cam::Camera<f64>;

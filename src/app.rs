@@ -1,10 +1,9 @@
 use std::sync::{ Arc, Mutex, mpsc };
 use piston_window::PistonWindow;
-use piston::input::{ UpdateArgs, RenderArgs };
+use piston::input::{ self, UpdateArgs, RenderArgs };
 use slog::Logger;
 use gfx;
 use gfx_device_gl;
-use camera_controllers;
 use specs;
 
 use game::Game;
@@ -35,7 +34,7 @@ pub struct App {
     // TEMP: Share with rendering system until the rendering system
     // is smart enough to take full ownership of it.
     projection: Arc<Mutex<[[f32; 4]; 4]>>,
-    first_person: Arc<Mutex<camera_controllers::FirstPerson>>,
+    camera_input_sender: mpsc::Sender<input::Event>,
     factory: gfx_device_gl::Factory,
     output_color: gfx::handle::RenderTargetView<gfx_device_gl::Resources, (gfx::format::R8_G8_B8_A8, gfx::format::Srgb)>,
     output_stencil: gfx::handle::DepthStencilView<gfx_device_gl::Resources, (gfx::format::D24_S8, gfx::format::Unorm)>,
@@ -87,11 +86,7 @@ impl App {
         let log = parent_log.new(o!());
 
         let projection = Arc::new(Mutex::new(get_projection(window)));
-        let first_person = FirstPerson::new(
-            [0.5, 0.5, 4.0],
-            FirstPersonSettings::keyboard_wasd()
-        );
-        let first_person_mutex_arc = Arc::new(Mutex::new(first_person));
+        let camera = Camera::new([0.0, 0.0, 0.0]);
 
         let mut mesh_repo = MeshRepository::new(
             window.output_color.clone(),
@@ -117,11 +112,14 @@ impl App {
         // This manages execution of all game systems,
         // i.e. the interaction between sets of components.
         let mut world = specs::World::new();
+        world.register::<render::player_camera::ClientPlayer>();
         world.register::<cell_dweller::CellDweller>();
         world.register::<render::Visual>();
         world.register::<Spatial>();
         world.register::<globe::Globe>();
         world.register::<globe::ChunkView>();
+
+        world.add_resource(camera);
 
         // Add some things to the world.
 
@@ -141,8 +139,15 @@ impl App {
             factory,
             &mut mesh_repo,
         );
+        let snowman_mesh = render::make_obj_mesh(
+            "assets/models/snowman.obj",
+            "assets/models/snowman.mtl",
+            0.01,
+            factory,
+            &mut mesh_repo,
+        );
         let mut cell_dweller_visual = render::Visual::new_empty();
-        cell_dweller_visual.set_mesh_handle(axes_mesh);
+        cell_dweller_visual.set_mesh_handle(snowman_mesh);
         let globe_spec = globe.spec();
         // First add the globe to the world so we can get a
         // handle on its entity.
@@ -150,6 +155,7 @@ impl App {
             .with(globe)
             .build();
         world.create_now()
+            .with(render::player_camera::ClientPlayer)
             .with(cell_dweller::CellDweller::new(
                 guy_pos,
                 Dir::default(),
@@ -166,16 +172,19 @@ impl App {
             render_sys_encoder_channel,
             window.output_color.clone(),
             window.output_stencil.clone(),
-            first_person_mutex_arc.clone(),
             projection.clone(),
             &log,
             mesh_repo_ptr.clone(),
         );
+        // Event channel for camera system
+        let (camera_input_sender, camera_input_receiver) = mpsc::channel();
+        let camera_update_sys = render::player_camera::System::new(camera_input_receiver);
 
         let mut planner = specs::Planner::new(world, 2);
         planner.add_system(movement_sys, "cd_movement", 100);
         planner.add_system(mining_sys, "cd_mining", 100);
         planner.add_system(render_sys, "render", 50);
+        planner.add_system(camera_update_sys, "camera_update", 50);
 
         game.init_systems(&mut planner, &log);
 
@@ -187,7 +196,7 @@ impl App {
             movement_input_sender: movement_input_sender,
             mining_input_sender: mining_input_sender,
             projection: projection,
-            first_person: first_person_mutex_arc,
+            camera_input_sender: camera_input_sender,
             factory: factory.clone(),
             output_color: window.output_color.clone(),
             output_stencil: window.output_stencil.clone(),
@@ -203,8 +212,6 @@ impl App {
 
         let mut events = window.events();
         while let Some(e) = events.next(window) {
-            self.first_person.lock().unwrap().event(&e);
-
             if let Some(r) = e.render_args() {
                 self.render(&r, &mut window);
             }
@@ -240,6 +247,8 @@ impl App {
                     _ => (),
                 }
             }
+
+            self.camera_input_sender.send(e);
         }
 
         info!(self.log, "Quitting");

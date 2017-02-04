@@ -3,8 +3,8 @@ use std::sync::{ Arc, Mutex };
 use gfx;
 use gfx::Primitive;
 use gfx::state::Rasterizer;
-use vecmath;
 use camera_controllers;
+use vecmath;
 use specs;
 use slog::Logger;
 
@@ -27,7 +27,6 @@ pub struct System<R: gfx::Resources, C: gfx::CommandBuffer<R>> {
     encoder_channel: EncoderChannel<R, C>,
     output_color: gfx::handle::RenderTargetView<R, gfx::format::Srgba8>,
     output_stencil: gfx::handle::DepthStencilView<R, gfx::format::DepthStencil>,
-    first_person: Arc<Mutex<camera_controllers::FirstPerson>>,
     projection: Arc<Mutex<[[f32; 4]; 4]>>,
 }
 
@@ -37,7 +36,6 @@ impl<R: gfx::Resources, C: gfx::CommandBuffer<R>> System<R, C> {
         encoder_channel: EncoderChannel<R, C>,
         output_color: gfx::handle::RenderTargetView<R, gfx::format::Srgba8>,
         output_stencil: gfx::handle::DepthStencilView<R, gfx::format::DepthStencil>,
-        first_person: Arc<Mutex<camera_controllers::FirstPerson>>,
         projection: Arc<Mutex<[[f32; 4]; 4]>>,
         parent_log: &Logger,
         mesh_repo: Arc<Mutex<MeshRepository<R>>>,
@@ -62,7 +60,6 @@ impl<R: gfx::Resources, C: gfx::CommandBuffer<R>> System<R, C> {
             encoder_channel: encoder_channel,
             output_color: output_color,
             output_stencil: output_stencil,
-            first_person: first_person,
             projection: projection,
             log: log,
             mesh_repo: mesh_repo,
@@ -79,6 +76,7 @@ impl<R: gfx::Resources, C: gfx::CommandBuffer<R>> System<R, C> {
         dt: TimeDelta,
         visuals: specs::Storage<Visual, A, Vd>,
         spatials: specs::Storage<Spatial, A, Sd>,
+        camera: &mut Camera,
     ) {
         // TODO: Systems are currently run on the main thread,
         // so we need to `try_recv` to avoid deadlock.
@@ -96,7 +94,7 @@ impl<R: gfx::Resources, C: gfx::CommandBuffer<R>> System<R, C> {
         encoder.clear(&self.output_color, CLEAR_COLOR);
         encoder.clear_depth(&self.output_stencil, 1.0);
 
-        let fp = self.first_person.lock().unwrap();
+        //let cam = self.camera.lock().unwrap();
         let projection = self.projection.lock().unwrap();
         let mut mesh_repo = self.mesh_repo.lock().unwrap();
 
@@ -127,7 +125,7 @@ impl<R: gfx::Resources, C: gfx::CommandBuffer<R>> System<R, C> {
 
             let model_view_projection = camera_controllers::model_view_projection(
                 model_for_camera_controllers,
-                fp.camera(dt).orthogonal(),
+                vecmath::mat4_cast(camera.orthogonal()),
                 *projection
             );
 
@@ -156,11 +154,11 @@ R: 'static + gfx::Resources,
 C: 'static + gfx::CommandBuffer<R> + Send,
 {
     fn run(&mut self, arg: specs::RunArg, dt: TimeDelta) {
-        let (visuals, spatials) = arg.fetch(|w|
-            (w.read::<Visual>(), w.read::<Spatial>()),
+        let (visuals, spatials, mut camera) = arg.fetch(|w|
+            (w.read::<Visual>(), w.read::<Spatial>(), w.write_resource::<Camera>()),
         );
 
-        self.draw(dt, visuals, spatials);
+        self.draw(dt, visuals, spatials, &mut *camera);
 
         // TODO: implement own "extrapolated time" concept or similar
         // to decide how often we should actually be trying to render?

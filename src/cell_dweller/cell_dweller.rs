@@ -10,6 +10,8 @@ pub struct CellDweller {
     pub pos: CellPos,
     pub dir: Dir,
     pub last_turn_bias: TurnDir,
+    pub yaw: f64,
+    pub pitch: f64,
     // Most `CellDweller`s will also be `Spatial`s. Track whether the
     // computed real-space transform has been updated since the globe-space
     // transform was modified so we know when the former is dirty.
@@ -29,6 +31,8 @@ impl CellDweller {
             pos: pos,
             dir: dir,
             last_turn_bias: TurnDir::Right,
+            yaw: 0.0,
+            pitch: 0.0,
             is_real_space_transform_dirty: true,
             globe_spec: globe_spec,
             // TODO: accept as parameter
@@ -70,6 +74,37 @@ impl CellDweller {
         self.dir
     }
 
+    pub fn pan(&mut self, pan: f64) {
+        use std::f64;
+        if pan == 0.0 {
+            return;
+        }
+        let turn_dir = if pan > 0.0 { TurnDir::Left } else { TurnDir::Right };
+        let angle_between_edges =
+            if is_pentagon(&self.pos, self.globe_spec.root_resolution) {
+                2.0 * f64::consts::PI / 5.0
+            } else {
+                2.0 * f64::consts::PI / 6.0
+            };
+        let half_angle = angle_between_edges / 2.0;
+
+        self.yaw += pan;
+        while f64::abs(self.yaw) > half_angle {
+            match turn_dir {
+                TurnDir::Left => {
+                    self.turn(turn_dir);
+                    self.yaw -= angle_between_edges;
+                },
+                TurnDir::Right => {
+                    self.turn(turn_dir);
+                    self.yaw += angle_between_edges;
+                },
+            }
+        }
+
+        self.is_real_space_transform_dirty = true;
+    }
+
     pub fn turn(&mut self, turn_dir: TurnDir) {
         turn_by_one_hex_edge(
             &mut self.pos,
@@ -86,15 +121,21 @@ impl CellDweller {
     }
 
     fn real_transform(&self) -> Iso3 {
+        use na::Rotation;
+
         let eye = self.real_pos();
-        // Look one cell ahead.
-        let next_pos = adjacent_pos_in_dir(self.pos, self.dir).unwrap();
+        let next_pos = adjacent_pos_in_dir(self.pos, self.dir).unwrap(); // Look one cell ahead.
         let target = self.globe_spec.cell_bottom_center(next_pos);
+
         // Calculate up vector. Nalgebra will normalise this so we can
         // just use the eye position as a vector; it points up out from
         // the center of the world already!
         let up = eye.to_vector();
-        Iso3::new_observer_frame(&eye, &target, &up)
+        let aim = Vec3::new(0.0, self.yaw, 0.0);
+
+        let mut rotation = Rot3::new_observer_frame(&(target - eye), &up);
+        rotation.prepend_rotation_mut(&aim);
+        Iso3::from_rotation_matrix(eye.to_vector(), rotation)
     }
 
     pub fn is_real_space_transform_dirty(&self) -> bool {

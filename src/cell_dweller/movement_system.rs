@@ -1,4 +1,5 @@
 use std::sync::mpsc;
+use std::f64;
 use specs;
 use slog::Logger;
 
@@ -165,13 +166,15 @@ impl specs::System<TimeDelta> for MovementSystem {
             let still_waiting_to_turn = cd.seconds_until_next_turn > 0.0;
             if !still_waiting_to_turn {
                 if self.turn_left && !self.turn_right  {
-                    cd.turn(TurnDir::Left);
-                    cd.seconds_until_next_turn = cd.seconds_between_turns;
-                    trace!(self.log, "Turned left"; "new_pos" => format!("{:?}", cd.pos()), "new_dir" => format!("{:?}", cd.dir()));
+                    //cd.turn(TurnDir::Left);
+                    cd.pan(f64::consts::PI * dt);
+                    //cd.seconds_until_next_turn = cd.seconds_between_turns;
+                    //trace!(self.log, "Turned left"; "new_pos" => format!("{:?}", cd.pos()), "new_dir" => format!("{:?}", cd.dir()));
                 } else if self.turn_right && !self.turn_left {
-                    cd.turn(TurnDir::Right);
-                    cd.seconds_until_next_turn = cd.seconds_between_turns;
-                    trace!(self.log, "Turned right"; "new_pos" => format!("{:?}", cd.pos()), "new_dir" => format!("{:?}", cd.dir()));
+                    cd.pan(-f64::consts::PI * dt);
+                    //cd.seconds_until_next_turn = cd.seconds_between_turns;
+                    //cd.turn(TurnDir::Right);
+                    //trace!(self.log, "Turned right"; "new_pos" => format!("{:?}", cd.pos()), "new_dir" => format!("{:?}", cd.dir()));
                 }
             }
 
