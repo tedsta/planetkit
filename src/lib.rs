@@ -14,7 +14,6 @@ extern crate opengl_graphics;
 #[macro_use]
 extern crate gfx;
 extern crate gfx_device_gl;
-extern crate input;
 extern crate piston_window;
 extern crate camera_controllers;
 extern crate vecmath;
@@ -28,6 +27,7 @@ extern crate specs;
 extern crate num_traits;
 extern crate wavefront_obj as obj;
 
+pub mod input_adapter;
 pub mod globe;
 pub mod types;
 pub mod app;
@@ -36,6 +36,7 @@ pub mod render;
 pub mod simple;
 pub mod cell_dweller;
 pub mod movement;
+pub mod system_priority;
 
 mod spatial;
 pub use spatial::Spatial;

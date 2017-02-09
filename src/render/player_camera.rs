@@ -1,7 +1,6 @@
 use std::sync::mpsc;
 
-use input;
-
+use piston::input;
 use specs;
 use specs::Join;
 
@@ -15,11 +14,11 @@ impl specs::Component for ClientPlayer {
 
 // Camera update system
 pub struct System {
-    camera_input_receiver: mpsc::Receiver<input::Event>,
+    camera_input_receiver: mpsc::Receiver<input::Input>,
 }
 
 impl System {
-    pub fn new(input_receiver: mpsc::Receiver<input::Event>) -> System {
+    pub fn new(input_receiver: mpsc::Receiver<input::Input>) -> System {
         System {
             camera_input_receiver: input_receiver,
         }
