@@ -26,6 +26,7 @@ extern crate slog_term;
 extern crate specs;
 extern crate num_traits;
 extern crate wavefront_obj as obj;
+extern crate ncollide;
 
 pub mod input_adapter;
 pub mod globe;

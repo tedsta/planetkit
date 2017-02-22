@@ -40,7 +40,7 @@ impl specs::System<TimeDelta> for System {
         }
         // Update the PlayerCamera's target position
         for (i, (_, s)) in (&client_players.check(), &spatials).iter().enumerate() {
-            let ref player_pos = s.transform.translation;
+            let player_pos = s.transform.translation;
 
             let up = player_pos.normalize(); // TODO player_pos - planet_pos
             let forward = s.transform.rotation.rotate(&Vec3::new(0.0, 0.0, 1.0));

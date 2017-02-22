@@ -8,6 +8,7 @@ mod root;
 pub mod cell_shape;
 mod view;
 mod gen;
+mod geometry;
 mod cell_pos;
 mod dir;
 mod chunk_view;
