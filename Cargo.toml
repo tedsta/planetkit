@@ -2,6 +2,10 @@
 name = "planetkit"
 version = "0.0.1"
 authors = ["Jeff Parsons <jeff@parsons.io>"]
+build = "build.rs"
+
+[features]
+nightly = []
 
 [lib]
 path = "src/lib.rs"
@@ -34,3 +38,6 @@ specs = { git = "https://github.com/slide-rs/specs" }
 num-traits = "0.1.36"
 wavefront_obj = "5.0.0"
 ncollide = "0.10.0"
+
+[build-dependencies]
+rustc_version = "0.1.*"

@@ -2,8 +2,10 @@
 // You should only do this on nightly Rust.
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
+#![cfg_attr(all(feature = "nightly", test), feature(test))]
 
 extern crate cam;
+
 extern crate chrono;
 extern crate rand;
 extern crate noise;
@@ -28,6 +30,9 @@ extern crate num_traits;
 extern crate wavefront_obj as obj;
 extern crate ncollide;
 
+#[cfg(all(feature = "nightly", test))]
+extern crate test;
+
 pub mod input_adapter;
 pub mod globe;
 pub mod types;
@@ -41,3 +46,6 @@ pub mod system_priority;
 
 mod spatial;
 pub use spatial::Spatial;
+
+#[cfg(test)]
+mod integration_tests;

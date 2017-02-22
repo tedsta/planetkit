@@ -133,19 +133,42 @@ impl App {
     pub fn temp_remove_me_init(&mut self) {
         use ::Spatial;
 
+        let camera = Camera::new([0.0, 0.0, 0.0]);
+        self.planner.mut_world().add_resource(camera);
+
         // Add some things to the world.
 
         // Make globe and create a mesh for each of its chunks.
         //
         // TODO: don't bake this into the generic app!
         let globe = globe::Globe::new_example(&self.log);
+        let globe_spec = globe.spec();
+        // First add the globe to the world so we can get a
+        // handle on its entity.
+        let globe_entity = self.planner.mut_world().create_now()
+            .with(globe)
+            .build();
+
+        // TEMP
+        // Step before adding cell dweller; otherwise there'll be
+        // no chunks, so we won't know where to put him!
+        self.planner.dispatch(0.02);
+        self.planner.wait();
 
         // Find globe surface and put player character on it.
         use globe::{ CellPos, Dir };
         use globe::chunk::Material;
         let mut guy_pos = CellPos::default();
-        guy_pos = globe.find_lowest_cell_containing(guy_pos, Material::Air)
-            .expect("Uh oh, there's something wrong with our globe.");
+        guy_pos = {
+            let globes = self.planner
+                .mut_world()
+                .read::<globe::Globe>();
+            let globe = globes
+                .get(globe_entity)
+                .expect("Uh oh, where did our Globe go?");
+            globe.find_lowest_cell_containing(guy_pos, Material::Air)
+                .expect("Uh oh, there's something wrong with our globe.")
+        };
         let factory = &mut self.factory.clone();
         let mut mesh_repo = self.mesh_repo.lock().unwrap();
         let axes_mesh = render::make_axes_mesh(
@@ -161,14 +184,7 @@ impl App {
         );
         let mut cell_dweller_visual = render::Visual::new_empty();
         cell_dweller_visual.set_mesh_handle(snowman_mesh);
-        let globe_spec = globe.spec();
-        // First add the globe to the world so we can get a
-        // handle on its entity.
-        let world = self.planner.mut_world();
-        let globe_entity = world.create_now()
-            .with(globe)
-            .build();
-        world.create_now()
+        self.planner.mut_world().create_now()
             .with(render::player_camera::ClientPlayer)
             .with(cell_dweller::CellDweller::new(
                 guy_pos,
@@ -179,9 +195,6 @@ impl App {
             .with(cell_dweller_visual)
             .with(Spatial::root())
             .build();
-
-        let camera = Camera::new([0.0, 0.0, 0.0]);
-        world.add_resource(camera);
     }
 
     pub fn run(&mut self, mut window: &mut PistonWindow) {

@@ -10,9 +10,15 @@ mod view;
 mod gen;
 mod geometry;
 mod cell_pos;
+mod neighbors;
 mod dir;
 mod chunk_view;
 mod chunk_view_system;
+mod chunk_system;
+mod cursor;
+
+#[cfg(test)]
+mod tests;
 
 use types::*;
 
@@ -22,9 +28,12 @@ pub use self::globe::Globe;
 pub use self::spec::*;
 pub use self::view::*;
 pub use self::cell_pos::*;
+pub use self::neighbors::*;
 pub use self::dir::*;
 pub use self::chunk_view::*;
 pub use self::chunk_view_system::*;
+pub use self::chunk_system::ChunkSystem;
+pub use self::cursor::Cursor;
 
 pub type IntCoord = i64;
 
@@ -160,109 +169,59 @@ pub fn project(root: Root, mut pt_in_root_quad: Pt2) -> Pt3 {
     *pos_on_icosahedron.as_vector().normalize().as_point()
 }
 
-// Returns a position equivalent to `pos`,
-// but in whatever root owns the data for `pos`.
-//
-// The output will only ever differ from the input
-// if `pos` is on the edge of a root quad.
-//
-// Will return nonsense (or panics) if `pos` lies beyond the
-// edges of its root.
-pub fn pos_in_owning_root(pos: CellPos, resolution: [IntCoord; 2]) -> CellPos {
-    // Here is the pattern of which root a cell belongs to.
-    //
-    // Note how adacent roots neatly slot into each other's
-    // non-owned cells when wrapped around the globe.
-    //
-    // Also note the special cases for north and south poles;
-    // they don't fit neatly into the general pattern.
-    //
-    // In the diagram below, each circle represents a hexagon
-    // in a voxmap shell. Filled circles belong to the root,
-    // and empty circles belong to an adjacent root.
-    //
-    //   Root 0   Roots 1, 2, 3   Root 4
-    //   ------   -------------   ------
-    //
-    //      ●           ◌           ◌
-    //     ◌ ●         ◌ ●         ◌ ●
-    //    ◌ ● ●       ◌ ● ●       ◌ ● ●
-    //   ◌ ● ● ●     ◌ ● ● ●     ◌ ● ● ●
-    //  ◌ ● ● ● ●   ◌ ● ● ● ●   ◌ ● ● ● ●
-    //   ◌ ● ● ● ●   ◌ ● ● ● ●   ◌ ● ● ● ●
-    //    ◌ ● ● ● ●   ◌ ● ● ● ●   ◌ ● ● ● ●
-    //     ◌ ● ● ● ●   ◌ ● ● ● ●   ◌ ● ● ● ●
-    //      ◌ ● ● ● ●   ◌ ● ● ● ●   ◌ ● ● ● ●
-    //       ◌ ● ● ●     ◌ ● ● ●     ◌ ● ● ●
-    //        ◌ ● ●       ◌ ● ●       ◌ ● ●
-    //         ◌ ●         ◌ ●         ◌ ●
-    //          ◌           ◌           ●
-    //
-    let end_x = resolution[0];
-    let end_y = resolution[1];
-    let half_y = resolution[1] / 2;
-
-    // Special cases for north and south poles
-    if pos.x == 0 && pos.y == 0 {
-        // North pole
-        CellPos {
-            // First root owns north pole.
-            root: 0.into(),
-            x: 0,
-            y: 0,
-            z: pos.z,
-        }
-    } else if pos.x == end_x && pos.y == end_y {
-        // South pole
-        CellPos {
-            // Last root owns south pole.
-            root: 4.into(),
-            x: end_x,
-            y: end_y,
-            z: pos.z,
-        }
-    } else if pos.y == 0 {
-        // Roots don't own their north-west edge;
-        // translate to next root's north-east edge.
-        CellPos {
-            root: pos.root.next_west(),
-            x: 0,
-            y: pos.x,
-            z: pos.z,
-        }
-    } else if pos.x == end_x && pos.y < half_y {
-        // Roots don't own their mid-west edge;
-        // translate to the next root's mid-east edge.
-        CellPos {
-            root: pos.root.next_west(),
-            x: 0,
-            y: half_y + pos.y,
-            z: pos.z,
-        }
-    } else if pos.x == end_x {
-        // Roots don't own their south-west edge;
-        // translate to the next root's south-east edge.
-        CellPos {
-            root: pos.root.next_west(),
-            y: end_y,
-            x: pos.y - half_y,
-            z: pos.z,
-        }
+/// Calculate the origin of a chunk that contains the given `pos`,
+/// with the guarantee that the chunk will be in the same root even
+/// if `pos` is on the edge of that root.
+///
+/// Note that this pays no attention to what chunk _owns_ the cell,
+/// so you should assume that any chunk in this root that contains
+/// the position at all may be returned.
+pub fn origin_of_chunk_in_same_root_containing(
+    pos: CellPos,
+    root_resolution: [IntCoord; 2],
+    chunk_resolution: [IntCoord; 3],
+) -> ChunkOrigin {
+    // Calculate x-position of a containing chunk.
+    let end_x = root_resolution[0];
+    let chunk_origin_x = if pos.x == end_x {
+        // Instead of trying to find a chunk beyond those that exist,
+        // just use the last chunk in the x-direction; `pos` is in that.
+        (end_x / chunk_resolution[0] - 1) * chunk_resolution[0]
     } else {
-        // `pos` is either on an edge owned by its root,
-        // or somewhere in the middle of the root.
-        pos
-    }
+        pos.x / chunk_resolution[0] * chunk_resolution[0]
+    };
+
+    // Calculate y-position of a containing chunk.
+    let end_y = root_resolution[1];
+    let chunk_origin_y = if pos.y == end_y {
+        // Instead of trying to find a chunk beyond those that exist,
+        // just use the last chunk in the y-direction; `pos` is in that.
+        (end_y / chunk_resolution[1] - 1) * chunk_resolution[1]
+    } else {
+        pos.y / chunk_resolution[1] * chunk_resolution[1]
+    };
+
+    // Z-position is easy; there's no sharing of cells on the z-axis.
+    let chunk_origin_z = pos.z / chunk_resolution[2] * chunk_resolution[2];
+
+    ChunkOrigin::new(
+        CellPos {
+            root: pos.root,
+            x: chunk_origin_x,
+            y: chunk_origin_y,
+            z: chunk_origin_z,
+        },
+        root_resolution,
+        chunk_resolution,
+    )
 }
 
 pub fn origin_of_chunk_owning(
-    mut pos: CellPos,
+    pos_in_owning_root: PosInOwningRoot,
     root_resolution: [IntCoord; 2],
     chunk_resolution: [IntCoord; 3],
-) -> CellPos {
-    // Translate into owning root.
-    // TODO: solve this by taking a pre-vouched position.
-    pos = pos_in_owning_root(pos, root_resolution);
+) -> ChunkOrigin {
+    let pos: CellPos = pos_in_owning_root.into();
 
     // Figure out what chunk this is in.
     let end_x = root_resolution[0];
@@ -274,31 +233,43 @@ pub fn origin_of_chunk_owning(
     let chunk_origin_z = pos.z / chunk_resolution[2] * chunk_resolution[2];
     if pos.x == 0 && pos.y == 0 {
         // Chunk at (0, 0) owns north pole.
-        CellPos {
-            root: pos.root,
-            x: 0,
-            y: 0,
-            z: chunk_origin_z,
-        }
+        ChunkOrigin::new(
+            CellPos {
+                root: pos.root,
+                x: 0,
+                y: 0,
+                z: chunk_origin_z,
+            },
+            root_resolution,
+            chunk_resolution,
+        )
     } else if pos.x == end_x && pos.y == end_y {
         // Chunk at (last_chunk_x, last_chunk_y) owns south pole.
-        CellPos {
-            root: pos.root,
-            x: last_chunk_x,
-            y: last_chunk_y,
-            z: chunk_origin_z,
-        }
+        ChunkOrigin::new(
+            CellPos {
+                root: pos.root,
+                x: last_chunk_x,
+                y: last_chunk_y,
+                z: chunk_origin_z,
+            },
+            root_resolution,
+            chunk_resolution,
+        )
     } else {
         // Chunks own cells on their edge at `local_x == 0`, and their edge at `local_y == chunk_resolution`.
         // The cells on other edges belong to adjacent chunks.
         let chunk_origin_x = pos.x / chunk_resolution[0] * chunk_resolution[0];
         // Shift everything down by one in y-direction.
         let chunk_origin_y = (pos.y - 1) / chunk_resolution[1] * chunk_resolution[1];
-        CellPos {
-            root: pos.root,
-            x: chunk_origin_x,
-            y: chunk_origin_y,
-            z: chunk_origin_z,
-        }
+        ChunkOrigin::new(
+            CellPos {
+                root: pos.root,
+                x: chunk_origin_x,
+                y: chunk_origin_y,
+                z: chunk_origin_z,
+            },
+            root_resolution,
+            chunk_resolution,
+        )
     }
 }

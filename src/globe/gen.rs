@@ -4,12 +4,19 @@ use super::spec::Spec;
 use super::CellPos;
 use super::chunk::{ Cell, Material };
 
-// Globe content generator. Stores all the state for generating
-// the terrain and any other parts of the globe that are derived
-// from its seed.
-//
-// Will eventually do some basic caching, etc., but is pretty dumb
-// right now.
+// TODO: turn this into a component that we can slap onto a Globe
+// or other globe-oid (distant point?).
+
+/// Globe content generator. Stores all the state for generating
+/// the terrain and any other parts of the globe that are derived
+/// from its seed.
+///
+/// Will eventually do some basic caching, etc., but is pretty dumb
+/// right now.
+///
+/// The plan is for this to eventually be used with multiple
+/// implementations of globes, e.g., a full voxmap based globe,
+/// a distant blob in the sky, to a shiny dot in the distance.
 pub struct Gen {
     spec: Spec,
     // Permutation table for noise
@@ -45,11 +52,15 @@ impl Gen {
         let land_pt3 = self.spec.cell_center_on_unit_sphere(cell_pos);
         let cell_pt3 = self.spec.cell_center_center(cell_pos);
 
+        // More temp; TODO: make a different Gen for flat earth.
         // Vary a little bit around 1.0.
-        let delta =
+        let delta = if self.spec.flat {
+            self.spec.ocean_radius * 0.1
+        } else {
             terrain_noise.apply(&self.pt, land_pt3.as_ref())
             * self.spec.ocean_radius
-            * 0.3;
+            * 0.3
+        };
         let land_height = self.spec.ocean_radius + delta;
         // TEMP: ...
         use na::Norm;
